@@ -51,66 +51,76 @@ def parse_json(data):
 ######################################################################
 # INSERT CODE HERE
 ######################################################################
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "OK"}), 200
 
-@app.route('/count', methods=['GET'])
+@app.route("/health")
+def healthz():
+    return jsonify(dict(status="OK")), 200
+	
+@app.route("/count")
 def count():
+    """return length of data"""
     count = db.songs.count_documents({})
-    return jsonify({"count": count}), 200
 
-@app.route('/song', methods=['GET'])
+    return {"count": count}, 200
+
+@app.route("/song", methods=["GET"])
 def songs():
-    """Return all songs in the database"""
-    all_songs = list(db.songs.find({}))
-    return jsonify({"songs": parse_json(all_songs)}), 200
+    # docker run -d --name mongodb-test -e MONGO_INITDB_ROOT_USERNAME=user
+    # -e MONGO_INITDB_ROOT_PASSWORD=password -e MONGO_INITDB_DATABASE=collection mongo
+    results = list(db.songs.find({}))
+    print(results[0])
+    return {"songs": parse_json(results)}, 200
 
-@app.route('/song/<int:id>', methods=['GET'])
+@app.route("/song/<int:id>", methods=["GET"])
 def get_song_by_id(id):
-    """Return song by ID"""
     song = db.songs.find_one({"id": id})
     if not song:
-        return jsonify({"message": f"song with id {id} not found"}), 404
-    return jsonify(parse_json(song)), 200
+        return {"message": f"song with id {id} not found"}, 404
+    return parse_json(song), 200
 
-@app.route('/song', methods=['POST'])
+@app.route("/song", methods=["POST"])
 def create_song():
-    """Create a new song"""
-    song = request.get_json()
-    if not song or 'id' not in song:
-        return jsonify({"Message": "Invalid song data"}), 400
+    # get data from the json body
+    song_in = request.json
 
-    existing_song = db.songs.find_one({"id": song["id"]})
-    if existing_song:
-        return jsonify({"Message": f"song with id {song['id']} already present"}), 302
+    print(song_in["id"])
 
-    result = db.songs.insert_one(song)
-    return jsonify({"inserted id": parse_json(result.inserted_id)}), 201
+    # if the id is already there, return 303 with the URL for the resource
+    song = db.songs.find_one({"id": song_in["id"]})
+    if song:
+        return {
+            "Message": f"song with id {song_in['id']} already present"
+        }, 302
 
-@app.route('/song/<int:id>', methods=["PUT"])
+    insert_id: InsertOneResult = db.songs.insert_one(song_in)
+
+    return {"inserted id": parse_json(insert_id.inserted_id)}, 201
+
+@app.route("/song/<int:id>", methods=["PUT"])
 def update_song(id):
-    """Update an existing song"""
-    updated_data = request.get_json()
+
+    # get data from the json body
+    song_in = request.json
 
     song = db.songs.find_one({"id": id})
-    if not song:
-        return jsonify({"message": "song not found"}), 404
 
-    update_result = db.songs.update_one({"id": id}, {"$set": updated_data})
+    if song == None:
+        return {"message": "song not found"}, 404
 
-    if update_result.modified_count == 0:
-        return jsonify({"message": "song found, but nothing updated"}), 200
+    updated_data = {"$set": song_in}
 
-    updated_song = db.songs.find_one({"id": id})
-    return jsonify(parse_json(updated_song)), 201
+    result = db.songs.update_one({"id": id}, updated_data)
 
-@app.route('/song/<int:id>', methods=["DELETE"])
+    if result.modified_count == 0:
+        return {"message": "song found, but nothing updated"}, 200
+    else:
+        return parse_json(db.songs.find_one({"id": id})), 201
+
+@app.route("/song/<int:id>", methods=["DELETE"])
 def delete_song(id):
-    """Delete a song by id"""
-    result = db.songs.delete_one({"id": id})
-    
-    if result.deleted_count == 0:
-        return jsonify({"message": "song not found"}), 404
 
-    return '', 204
+    result = db.songs.delete_one({"id": id})
+    if result.deleted_count == 0:
+        return {"message": "song not found"}, 404
+    else:
+        return "", 204
